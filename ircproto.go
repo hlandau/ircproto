@@ -34,13 +34,6 @@ type Client struct {
 }
 
 // Create a new IRC client, which maintains a persistent connection to an IRC
-// server and reconnects as necessary. For a more powerful interface, use
-// New().
-func NewSimple(ncfg *ircneg.Config, urls ...string) (*Client, error) {
-	return New(Simple(ncfg, urls...))
-}
-
-// Create a new IRC client, which maintains a persistent connection to an IRC
 // server and reconnects as necessary.
 func New(cfg *Config) (*Client, error) {
 	c := &Client{

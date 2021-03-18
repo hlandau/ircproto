@@ -29,12 +29,6 @@ type Config struct {
 	// List of capabilities which should be requested if they are supported by
 	// the server.
 	DesiredCaps []string
-
-	// Called with any message transmitted by the negotiation process, if set.
-	OnWrite func(msg *ircparse.Msg)
-
-	// Called with any message received during the negotiation process, if set.
-	OnRead func(msg *ircparse.Msg)
 }
 
 // Results of an IRC negotiation process.
@@ -95,18 +89,16 @@ func Negotiate(ctx context.Context, conn ircconn.Abstract, cfg *Config) (res *Re
 		return
 	}
 
+	var allReadMsgs []*ircparse.Msg
 	readMsg := func() (*ircparse.Msg, error) {
 		msg, err := conn.ReadMsg(ctx)
-		if err == nil && cfg.OnRead != nil {
-			cfg.OnRead(msg)
+		if err == nil {
+			allReadMsgs = append(allReadMsgs, msg)
 		}
 		return msg, err
 	}
 
 	writeMsg := func(msg *ircparse.Msg) error {
-		if cfg.OnWrite != nil {
-			cfg.OnWrite(msg)
-		}
 		return conn.WriteMsg(ctx, msg)
 	}
 
@@ -444,6 +436,14 @@ func Negotiate(ctx context.Context, conn ircconn.Abstract, cfg *Config) (res *Re
 		CapsEnabled:   capsEnabledList,
 		CapValues:     capValues,
 	}
+
+	// Try to unread the messages.
+	if unread, ok := conn.(ircconn.Unread); ok {
+		for _, msg := range allReadMsgs {
+			unread.UnreadMsg(msg)
+		}
+	}
+
 	err = nil
 	return
 }
