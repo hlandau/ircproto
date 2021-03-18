@@ -1,3 +1,5 @@
+// Package ircproto provides an auto-reconnecting IRC client library including
+// support IRCv3 capabilities, message tags and SASL.
 package ircproto
 
 import (
@@ -77,7 +79,7 @@ func (c *Client) Close() {
 // Indicates that a new connection should not be made once the current
 // connection fails. This should be used before sending QUIT in a clean
 // shutdown sequence as otherwise the client would immediately reconnect upon
-// losing connection to the server.
+// losing its connection to the server.
 func (c *Client) Deprecate() {
 	c.close(false)
 }

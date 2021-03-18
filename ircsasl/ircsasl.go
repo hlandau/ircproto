@@ -8,13 +8,17 @@ import (
 )
 
 type Credentials struct {
-	Username      string
-	AuthzUsername string
-	Password      string
+	Username      string // Authentication username. Leave blank to disable SASL.
+	AuthzUsername string // Authorization username. Can usually be left blank.
+	Password      string // Password.
 }
 
 type Config struct {
-	Credentials      Credentials
+	// Credentials to use to authenticate.
+	Credentials Credentials
+
+	// Methods we want to try. Methods in this list which are not supported by
+	// this package will be silently ignored.
 	AvailableMethods []string
 }
 
@@ -63,6 +67,9 @@ func (e *Engine) methodPref(method string) int {
 // attempt to initiate a different method and provided a list of supported
 // methods), this method should be called. Note that this resets the state
 // machine.
+//
+// Methods not supported by this package will be silently stripped from this
+// list.
 func (e *Engine) SetMethods(methods []string) error {
 	var ms []string
 	for _, method := range methods {

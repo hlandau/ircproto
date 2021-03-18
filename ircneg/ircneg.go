@@ -20,10 +20,10 @@ type Config struct {
 	IRCUser         string               // IRC username.
 	IRCReal         string               // IRC realname.
 	IRCPass         string               // IRC server password. This is not an account password.
-	SASLCredentials ircsasl.Credentials
+	SASLCredentials ircsasl.Credentials  // Leave empty to avoid using SASL.
 
 	// Do not attempt to use IRCv3 capabilities negotiation with the server.
-	// SASLUsername and SASLPassword will be ignored if set.
+	// SASLCredentials will be ignored if set.
 	InhibitCapSupport bool
 
 	// List of capabilities which should be requested if they are supported by
