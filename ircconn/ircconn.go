@@ -183,6 +183,9 @@ func NewConn(ctx context.Context, transportConn net.Conn, cfg *Config) (*Conn, e
 // Returned by write functions if a Conn is dead.
 var ErrClosed = fmt.Errorf("closed IRC connection")
 
+// This is used in testing to force partial writes.
+var testLimitTxLenFunc func() int
+
 // Write a raw command to the server. This should be a string ending in "\n"
 // and must be a well-formatted IRC command.
 //
@@ -221,7 +224,16 @@ func (conn *Conn) txMsg(ctx context.Context, raw string) error {
 	}
 
 	braw := []byte(raw)
-	n, err := conn.conn.Write(braw)
+	braw2 := braw
+	if testLimitTxLenFunc != nil {
+		if _, ok := ctx.Deadline(); ok {
+			if lim := testLimitTxLenFunc(); len(braw2) > lim {
+				braw2 = braw2[0:lim]
+			}
+		}
+	}
+
+	n, err := conn.conn.Write(braw2)
 	// Now we have to handle the following cases:
 	switch {
 
@@ -236,7 +248,7 @@ func (conn *Conn) txMsg(ctx context.Context, raw string) error {
 	// We sent something, but not everything, because an error (e.g. a deadline)
 	// occurred.
 	case n > 0 && n < len(braw):
-		if err == nil {
+		if err == nil && testLimitTxLenFunc == nil {
 			panic("this should never happen in a nil-error case")
 		}
 
@@ -308,7 +320,13 @@ func (conn *Conn) rxMsg(ctx context.Context, needParsed bool) (raw string, msg *
 	}
 
 	if !conn.cfg.InhibitPingHandling && msg.Command == "PING" {
-		err = conn.WriteMsg(ctx, &ircparse.Msg{Command: "PONG", Args: msg.Args})
+		// XXX. If we are using deadlines, our PONG transmission might complete as
+		// a partial write, meaning that we expect it to complete further on
+		// successive calls to WriteMsg. But there is no guarantee that any such
+		// calls will be made as the client may be depending on ReadMsg returning
+		// some message, which may not come for some time. So simply ignore deadlines
+		// for the purposes of PONGs.
+		err = conn.WriteMsg(context.Background(), &ircparse.Msg{Command: "PONG", Args: msg.Args})
 		if err != nil {
 			return
 		}
