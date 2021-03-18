@@ -33,6 +33,7 @@ type Conn struct {
 
 	readMutex, writeMutex sync.Mutex
 	teardown              uint32
+	bresidual             []byte
 }
 
 // Configuration for a Conn.
@@ -191,7 +192,7 @@ var ErrClosed = fmt.Errorf("closed IRC connection")
 // unlike the read methods, the write methods do not do this automatically
 // when they fail.
 func (conn *Conn) txMsg(ctx context.Context, raw string) error {
-	if conn.IsDead() {
+	if atomic.LoadUint32(&conn.teardown) != 0 {
 		return ErrClosed
 	}
 
@@ -203,12 +204,58 @@ func (conn *Conn) txMsg(ctx context.Context, raw string) error {
 		return err
 	}
 
-	_, err = conn.conn.Write([]byte(raw))
-	if err != nil {
-		return err
+	// Do we need to complete a previous partial write?
+	if len(conn.bresidual) > 0 {
+		n, err := conn.conn.Write(conn.bresidual)
+		if n > 0 {
+			conn.bresidual = conn.bresidual[n:]
+			if len(conn.bresidual) == 0 {
+				conn.bresidual = nil
+			}
+		}
+		if err != nil {
+			return err
+		} else if len(conn.bresidual) > 0 {
+			panic("unreachable")
+		}
 	}
 
-	return nil
+	braw := []byte(raw)
+	n, err := conn.conn.Write(braw)
+	// Now we have to handle the following cases:
+	switch {
+
+	// n == len(braw). Whether or not an error occurred, we're done here.
+	case n == len(braw):
+		return err
+
+	// We didn't send anything and we have an error. Report the error.
+	case n == 0 && err != nil:
+		return err
+
+	// We sent something, but not everything, because an error (e.g. a deadline)
+	// occurred.
+	case n > 0 && n < len(braw):
+		if err == nil {
+			panic("this should never happen in a nil-error case")
+		}
+
+		// We have sent a partial IRC command. We must complete it, so we have no
+		// choice to buffer the remainder of the command here and send it on the
+		// next write call made to us. Report "success", while in actuality we will
+		// only finish sending the command on a subsequent write call. Note that
+		// since there is no particular requirement that the client makes further
+		// write calls, the partial command might not be completed until an
+		// arbitrarily large amount of time later. However, the need to handle
+		// pings puts an upper bound on the amount of time a partial command could
+		// go unflushed, albeit a high one. If this tradeoff is unacceptable, I
+		// recommend avoiding the use of write deadlines.
+		conn.bresidual = braw[n:]
+		return nil
+
+	default:
+		panic("unreachable")
+	}
 }
 
 // Serialize a message and write it to the server.
@@ -241,14 +288,12 @@ func (conn *Conn) rxMsgActualInner(ctx context.Context) (raw string, err error) 
 func (conn *Conn) rxMsgActual(ctx context.Context, needParsed bool) (raw string, msg *ircparse.Msg, err error) {
 	raw, err = conn.rxMsgActualInner(ctx)
 	if err != nil {
-		conn.Close()
 		return
 	}
 
 	if needParsed {
 		msg, err = ircparse.Parse(raw)
 		if err != nil {
-			conn.Close()
 			return
 		}
 	}
@@ -320,12 +365,6 @@ func (conn *Conn) Close() {
 	}
 
 	conn.conn.Close()
-}
-
-// Returns true iff the Conn is in the torndown state, for example because
-// Close() was called or because a Read or Write function returned an error.
-func (conn *Conn) IsDead() bool {
-	return atomic.LoadUint32(&conn.teardown) != 0
 }
 
 // Access the underlying net.Conn. This should only be used for doing interface
