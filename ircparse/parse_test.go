@@ -185,7 +185,7 @@ var ss = []item{
 			"example.com/alpha": "beta",
 		},
 	}},
-	item{"@example.com/alpha=beta;foo=bar;baz=1 :nick!~user@host.name PING foo bar :this is message\r\n", "", true, Msg{
+	item{"@baz=1;example.com/alpha=beta;foo=bar :nick!~user@host.name PING foo bar :this is message\r\n", "", true, Msg{
 		NickName: "nick",
 		UserName: "~user",
 		HostName: "host.name",
@@ -195,6 +195,18 @@ var ss = []item{
 			"example.com/alpha": "beta",
 			"foo":               "bar",
 			"baz":               "1",
+		},
+	}},
+	item{"@baz=9\\s\\\\31;example.com/alpha=be\\:ta;foo=b\\r\\nar :nick!~user@host.name PING foo bar :this is message\r\n", "", true, Msg{
+		NickName: "nick",
+		UserName: "~user",
+		HostName: "host.name",
+		Command:  "PING",
+		Args:     []string{"foo", "bar", "this is message"},
+		Tags: map[string]string{
+			"example.com/alpha": "be;ta",
+			"foo":               "b\r\nar",
+			"baz":               "9 \\31",
 		},
 	}},
 }
@@ -211,6 +223,10 @@ func TestParse(t *testing.T) {
 			continue
 		}
 
+		if i.ok {
+			msg.Raw = ""
+		}
+
 		if i.ok && !reflect.DeepEqual(msg, &i.m) {
 			t.Errorf("mismatch:\nfor:       %q\nexpected:  %#v\ngot:       %#v", i.s, &i.m, msg)
 			continue
@@ -222,7 +238,10 @@ func TestParse(t *testing.T) {
 				expect = i.rto
 			}
 
-			s := msg.String()
+			s, err := msg.String()
+			if err != nil {
+				panic(err)
+			}
 			if s != expect {
 				t.Errorf("mismatch between input and output:\ninput:  %q\noutput: %q\n", expect, s)
 			}

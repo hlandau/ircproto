@@ -4,6 +4,7 @@ package ircparse
 import (
 	"errors"
 	"regexp"
+	"sort"
 	"strings"
 )
 
@@ -40,19 +41,17 @@ func (m *Msg) String() (string, error) {
 	s := ""
 	if len(m.Tags) > 0 {
 		s += "@"
-		first := true
+		var tagsList []string
 		for k, v := range m.Tags {
-			if first {
-				first = false
-			} else {
-				s += ";"
-			}
-			s += k
+			ss := k
 			if len(v) > 0 {
-				s += "="
-				s += v
+				ss += "="
+				ss += escapeTagValue(v)
 			}
+			tagsList = append(tagsList, ss)
 		}
+		sort.StringSlice(tagsList).Sort()
+		s += strings.Join(tagsList, ";")
 		s += " "
 	}
 
@@ -169,9 +168,59 @@ func Parse(s string) (*Msg, error) {
 
 			tagK := tms[reIdxKey]
 			tagV := tms[reIdxValue]
-			msg.Tags[tagK] = tagV
+			msg.Tags[tagK] = unescapeTagValue(tagV)
 		}
 	}
 
 	return msg, nil
+}
+
+func escapeTagValue(s string) string {
+	esc := ""
+	for _, c := range s {
+		switch c {
+		case ';':
+			esc += "\\:"
+		case ' ':
+			esc += "\\s"
+		case '\\':
+			esc += "\\\\"
+		case '\r':
+			esc += "\\r"
+		case '\n':
+			esc += "\\n"
+		default:
+			esc += string(c)
+		}
+	}
+	return esc
+}
+
+func unescapeTagValue(esc string) string {
+	s := ""
+	escaping := false
+	for _, c := range esc {
+		if escaping {
+			switch c {
+			case ':':
+				s += ";"
+			case 's':
+				s += " "
+			case '\\':
+				s += "\\"
+			case 'r':
+				s += "\r"
+			case 'n':
+				s += "\n"
+			default:
+				s += string(c)
+			}
+			escaping = false
+		} else if c == '\\' {
+			escaping = true
+		} else {
+			s += string(c)
+		}
+	}
+	return s
 }

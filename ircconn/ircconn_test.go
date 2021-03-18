@@ -47,9 +47,7 @@ func TestConn(t *testing.T) {
 		}
 		defer serverConn.Close()
 		for i := range items {
-			if items[i].Msg.Tags == nil {
-				items[i].Msg.Raw, _ = items[i].Msg.String()
-			}
+			items[i].Msg.Raw, _ = items[i].Msg.String()
 		}
 
 		for i := 0; i < count; i++ {
@@ -74,9 +72,6 @@ func TestConn(t *testing.T) {
 			msg, err := clientConn.ReadMsg(context.Background())
 			if err != nil {
 				t.Errorf("unexpected error receiving message from server: %v", err)
-			}
-			if items[j].Msg.Raw == "" {
-				msg.Raw = ""
 			}
 			if !reflect.DeepEqual(msg, items[j].Msg) {
 				t.Errorf("(%d) messages do not match:\n  got:      %#v\n  expected: %#v", j, msg, items[j].Msg)
