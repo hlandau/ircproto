@@ -4,7 +4,6 @@ package ircconn
 
 import (
 	"bufio"
-	"container/list"
 	"context"
 	"crypto/tls"
 	"fmt"
@@ -16,18 +15,6 @@ import (
 
 	"github.com/hlandau/ircproto/ircparse"
 )
-
-// Abstract interface for an IRC message source/sink.
-type Abstract interface {
-	Close()
-	WriteMsg(ctx context.Context, msg *ircparse.Msg) error
-	ReadMsg(ctx context.Context) (*ircparse.Msg, error)
-}
-
-// Abstract interface for an IRC message source which can have messages unread.
-type Unread interface {
-	UnreadMsg(msg *ircparse.Msg) error
-}
 
 // Conn represents an IRC client protocol connection. It represents, and has
 // the lifetime of, a single transport protocol connection; there is no
@@ -46,7 +33,6 @@ type Conn struct {
 
 	readMutex, writeMutex sync.Mutex
 	teardown              uint32
-	unreadMsgQueue        *list.List
 }
 
 // Configuration for a Conn.
@@ -74,7 +60,7 @@ type Config struct {
 	// If the message was not parsed, cmd is "" and msg.Raw contains the raw
 	// message. wasQueued is set to true if this is a message which was requeued
 	// with UnreadMsg.
-	LogReadFunc func(msg *ircparse.Msg, wasQueued bool)
+	LogReadFunc func(msg *ircparse.Msg)
 }
 
 // Set reasonable defaults for the Config structure. This configures TLS
@@ -185,10 +171,9 @@ func dialUsingHost(ctx context.Context, cfg *Config, addr string, useTLS bool) (
 // Close().
 func NewConn(ctx context.Context, transportConn net.Conn, cfg *Config) (*Conn, error) {
 	conn := &Conn{
-		conn:           transportConn,
-		rdr:            bufio.NewReader(transportConn),
-		cfg:            *cfg,
-		unreadMsgQueue: list.New(),
+		conn: transportConn,
+		rdr:  bufio.NewReader(transportConn),
+		cfg:  *cfg,
 	}
 
 	return conn, nil
@@ -241,33 +226,20 @@ func (conn *Conn) WriteMsg(ctx context.Context, msg *ircparse.Msg) error {
 	return err
 }
 
-func (conn *Conn) rxMsgActualInner(ctx context.Context) (raw string, wasQueued bool, err error) {
+func (conn *Conn) rxMsgActualInner(ctx context.Context) (raw string, err error) {
 	conn.readMutex.Lock()
 	defer conn.readMutex.Unlock()
-
-	if conn.unreadMsgQueue.Len() > 0 {
-		e := conn.unreadMsgQueue.Back()
-		raw = e.Value.(string)
-		conn.unreadMsgQueue.Remove(e)
-		wasQueued = true
-		return
-	}
 
 	err = conn.updateReadDeadline(ctx)
 	if err != nil {
 		return
 	}
 
-	raw, err = conn.rdr.ReadString('\n')
-	if err != nil {
-		return
-	}
-
-	return
+	return conn.rdr.ReadString('\n')
 }
 
-func (conn *Conn) rxMsgActual(ctx context.Context, needParsed bool) (raw string, msg *ircparse.Msg, wasQueued bool, err error) {
-	raw, wasQueued, err = conn.rxMsgActualInner(ctx)
+func (conn *Conn) rxMsgActual(ctx context.Context, needParsed bool) (raw string, msg *ircparse.Msg, err error) {
+	raw, err = conn.rxMsgActualInner(ctx)
 	if err != nil {
 		conn.Close()
 		return
@@ -284,8 +256,8 @@ func (conn *Conn) rxMsgActual(ctx context.Context, needParsed bool) (raw string,
 	return
 }
 
-func (conn *Conn) rxMsg(ctx context.Context, needParsed bool) (raw string, msg *ircparse.Msg, wasQueued bool, err error) {
-	raw, msg, wasQueued, err = conn.rxMsgActual(ctx, needParsed || !conn.cfg.InhibitPingHandling)
+func (conn *Conn) rxMsg(ctx context.Context, needParsed bool) (raw string, msg *ircparse.Msg, err error) {
+	raw, msg, err = conn.rxMsgActual(ctx, needParsed || !conn.cfg.InhibitPingHandling)
 	if err != nil {
 		return
 	}
@@ -307,10 +279,10 @@ func (conn *Conn) rxMsg(ctx context.Context, needParsed bool) (raw string, msg *
 // method returns an error), as internal ping handling is based on the
 // assumption that this (or ReadMsg) will be called frequently.
 func (conn *Conn) ReadRaw(ctx context.Context) (string, error) {
-	raw, _, wasQueued, err := conn.rxMsg(ctx, false)
+	raw, _, err := conn.rxMsg(ctx, false)
 
 	if err == nil && conn.cfg.LogReadFunc != nil {
-		conn.cfg.LogReadFunc(&ircparse.Msg{Raw: raw}, wasQueued)
+		conn.cfg.LogReadFunc(&ircparse.Msg{Raw: raw})
 	}
 
 	return raw, err
@@ -325,28 +297,13 @@ func (conn *Conn) ReadRaw(ctx context.Context) (string, error) {
 //
 // The raw message which was parsed is available in msg.Raw.
 func (conn *Conn) ReadMsg(ctx context.Context) (*ircparse.Msg, error) {
-	_, msg, wasQueued, err := conn.rxMsg(ctx, true)
+	_, msg, err := conn.rxMsg(ctx, true)
 
 	if err == nil && conn.cfg.LogReadFunc != nil {
-		conn.cfg.LogReadFunc(msg, wasQueued)
+		conn.cfg.LogReadFunc(msg)
 	}
 
 	return msg, err
-}
-
-// Unreads a message, placing it into a queue which will be drained by
-// successive calls to ReadMsg. This implements FIFO semantics; in other words,
-// if this is called with messages A, B, C in sequence, subsequent calls to
-// ReadMsg will return A, B, C, and then newly read messages.
-//
-// The message will be serialized and reparsed.
-func (conn *Conn) UnreadMsg(msg *ircparse.Msg) error {
-	s, err := msg.String()
-	if err != nil {
-		return err
-	}
-	conn.unreadMsgQueue.PushFront(s)
-	return nil
 }
 
 // Teardown the connection. This does not send QUIT but simply closes the

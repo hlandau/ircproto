@@ -22,10 +22,12 @@ const (
 type Client struct {
 	cfg Config
 
-	mutex sync.Mutex // covers state, conn, cond
-	state int        // state{Connecting,Active,Terminated}
-	conn  *ircconn.Conn
-	cond  *sync.Cond
+	mutex   sync.Mutex // covers state, conn, negRes, prepend, cond
+	state   int        // state{Connecting,Active,Terminated}
+	conn    *ircconn.Conn
+	negRes  *ircneg.Result
+	prepend ircconn.Source
+	cond    *sync.Cond
 
 	stopping      bool // True if stopping; do not reconnect on conn failure.
 	snrRunning    uint32
@@ -91,6 +93,19 @@ func (c *Client) close(immediate bool) {
 	}
 }
 
+// If the client currently has an active connection, return the negotiation
+// result data. Otherwise, returns nil.
+func (c *Client) NegotiateResult() *ircneg.Result {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+
+	if c.state != stateActive {
+		return nil
+	}
+
+	return c.negRes
+}
+
 // Writes a message to the current connection. If there is no current
 // connection, returns ErrDisconnected and the message is not queued.
 //
@@ -137,9 +152,9 @@ func (c *Client) ReadMsg(ctx context.Context) (*ircparse.Msg, error) {
 		return nil, err
 	}
 
-	conn := c.conn
+	prepend := c.prepend
 	c.mutex.Unlock()
-	msg, err := conn.ReadMsg(ctx)
+	msg, err := prepend.ReadMsg(ctx)
 	c.mutex.Lock()
 	if err != nil {
 		c.notifyFailure(err)
@@ -158,6 +173,8 @@ func (c *Client) notifyFailure(err error) {
 
 	c.conn.Close()
 	c.conn = nil
+	c.negRes = nil
+	c.prepend = nil
 
 	if c.stopping {
 		c.state = stateTerminated
@@ -203,10 +220,10 @@ func (c *Client) snrLoop() {
 		}
 
 		c.mutex.Unlock()
-		conn, err := c.snrAttemptConnect(c.snrCtx)
+		conn, res, err := c.snrAttemptConnect(c.snrCtx)
 		c.mutex.Lock()
 		if err == nil {
-			c.snrEmitNewConn(conn)
+			c.snrEmitNewConn(conn, res)
 			break
 		}
 
@@ -223,14 +240,14 @@ func (c *Client) snrLoop() {
 }
 
 // Does not touch the state, so the lock need not and should not be held.
-func (c *Client) snrAttemptConnect(ctx context.Context) (*ircconn.Conn, error) {
+func (c *Client) snrAttemptConnect(ctx context.Context) (*ircconn.Conn, *ircneg.Result, error) {
 	var err error
 	var cfg *ircconn.Config
 
 	if c.cfg.ConnConfigFunc != nil {
 		cfg, err = c.cfg.ConnConfigFunc()
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	} else {
 		cfg = &ircconn.Config{}
@@ -239,33 +256,33 @@ func (c *Client) snrAttemptConnect(ctx context.Context) (*ircconn.Conn, error) {
 
 	urls, err := c.cfg.URLListFunc()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	ncfg, err := c.cfg.NegConfigFunc()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	conn, err := ircconn.Dial(ctx, cfg, urls)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	_, err = ircneg.Negotiate(ctx, conn, ncfg)
+	res, err := ircneg.Negotiate(ctx, conn, ncfg)
 	if err != nil {
 		conn.Close()
-		return nil, err
+		return nil, nil, err
 	}
 
 	// Negotiation was successful so reset the backoff.
 	c.cfg.Backoff.Reset()
-	return conn, nil
+	return conn, res, nil
 }
 
 // New successful connection, make it available.
 // Must hold lock.
-func (c *Client) snrEmitNewConn(conn *ircconn.Conn) {
+func (c *Client) snrEmitNewConn(conn *ircconn.Conn, res *ircneg.Result) {
 	if c.state != stateConnecting || c.conn != nil {
 		panic("should not be an existing conn")
 	}
@@ -278,6 +295,8 @@ func (c *Client) snrEmitNewConn(conn *ircconn.Conn) {
 
 	c.state = stateActive
 	c.conn = conn
+	c.negRes = res
+	c.prepend = ircconn.PrependMsgs(conn, res.ReadMsgs)
 	c.cond.Broadcast()
 }
 

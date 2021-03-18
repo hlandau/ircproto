@@ -37,6 +37,7 @@ type Result struct {
 	CapsAvailable []string          // The capabilities which the server can support.
 	CapsEnabled   []string          // The capabilities which were actually enabled.
 	CapValues     map[string]string // Caps with values (e.g. sasl=EXTERNAL,PLAIN) list the values here.
+	ReadMsgs      []*ircparse.Msg   // All messages which were read during the negotiation.
 }
 
 func generateNick(cfg *Config, idx int) string {
@@ -435,13 +436,7 @@ func Negotiate(ctx context.Context, conn ircconn.Abstract, cfg *Config) (res *Re
 		CapsAvailable: serverSupportedCapsList,
 		CapsEnabled:   capsEnabledList,
 		CapValues:     capValues,
-	}
-
-	// Try to unread the messages.
-	if unread, ok := conn.(ircconn.Unread); ok {
-		for _, msg := range allReadMsgs {
-			unread.UnreadMsg(msg)
-		}
+		ReadMsgs:      allReadMsgs,
 	}
 
 	err = nil
