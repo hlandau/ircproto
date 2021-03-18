@@ -9,12 +9,18 @@ import (
 	"fmt"
 	"net"
 	neturl "net/url"
+	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/hlandau/ircproto/ircparse"
 )
 
-type MsgConn interface {
+// Abstract interface for an IRC message source/sink.
+type Abstract interface {
+	Close()
+	WriteMsg(ctx context.Context, msg *ircparse.Msg) error
+	ReadMsg(ctx context.Context) (*ircparse.Msg, error)
 }
 
 // Conn represents an IRC client protocol connection. It represents, and has
@@ -22,11 +28,18 @@ type MsgConn interface {
 // automatic reconnection functionality. It is primarily intended for use as
 // part of a higher-level protocol library which implements automatic
 // reconnection via a succession of Conns, but can be used directly if desired.
+//
+// The I/O methods of an established Conn take a context.Context. This context
+// is supported for the purposes of deadlines. A cancelled context will not be
+// allowed to initiate new I/O operations, but will not cancel operations in
+// progress.
 type Conn struct {
-	conn     net.Conn // transport connection (TCP, TLS, etc.)
-	rdr      *bufio.Reader
-	cfg      Config
-	teardown uint32
+	conn net.Conn // transport connection (TCP, TLS, etc.)
+	rdr  *bufio.Reader
+	cfg  Config
+
+	readMutex, writeMutex sync.Mutex
+	teardown              uint32
 }
 
 // Configuration for a Conn.
@@ -175,12 +188,20 @@ var ErrClosed = fmt.Errorf("closed IRC connection")
 // repeatedly until it returns an error. Alternatively, simply call Close();
 // unlike the read methods, the write methods do not do this automatically
 // when they fail.
-func (conn *Conn) WriteRaw(raw string) error {
+func (conn *Conn) WriteRaw(ctx context.Context, raw string) error {
 	if conn.IsDead() {
 		return ErrClosed
 	}
 
-	_, err := conn.conn.Write([]byte(raw))
+	conn.writeMutex.Lock()
+	defer conn.writeMutex.Unlock()
+
+	err := conn.updateWriteDeadline(ctx)
+	if err != nil {
+		return err
+	}
+
+	_, err = conn.conn.Write([]byte(raw))
 	if err != nil {
 		return err
 	}
@@ -189,17 +210,29 @@ func (conn *Conn) WriteRaw(raw string) error {
 }
 
 // Serialize a message and write it to the server.
-func (conn *Conn) WriteMsg(msg *ircparse.Msg) error {
+func (conn *Conn) WriteMsg(ctx context.Context, msg *ircparse.Msg) error {
 	raw, err := msg.String()
 	if err != nil {
 		return err
 	}
 
-	return conn.WriteRaw(raw)
+	return conn.WriteRaw(ctx, raw)
 }
 
-func (conn *Conn) rxMsgActual(needParsed bool) (raw string, msg *ircparse.Msg, err error) {
-	raw, err = conn.rdr.ReadString('\n')
+func (conn *Conn) rxMsgActualInner(ctx context.Context) (raw string, err error) {
+	conn.readMutex.Lock()
+	defer conn.readMutex.Unlock()
+
+	err = conn.updateReadDeadline(ctx)
+	if err != nil {
+		return
+	}
+
+	return conn.rdr.ReadString('\n')
+}
+
+func (conn *Conn) rxMsgActual(ctx context.Context, needParsed bool) (raw string, msg *ircparse.Msg, err error) {
+	raw, err = conn.rxMsgActualInner(ctx)
 	if err != nil {
 		conn.Close()
 		return
@@ -216,14 +249,14 @@ func (conn *Conn) rxMsgActual(needParsed bool) (raw string, msg *ircparse.Msg, e
 	return
 }
 
-func (conn *Conn) rxMsg() (raw string, msg *ircparse.Msg, err error) {
-	raw, msg, err = conn.rxMsgActual(!conn.cfg.InhibitPingHandling)
+func (conn *Conn) rxMsg(ctx context.Context, needParsed bool) (raw string, msg *ircparse.Msg, err error) {
+	raw, msg, err = conn.rxMsgActual(ctx, needParsed || !conn.cfg.InhibitPingHandling)
 	if err != nil {
 		return
 	}
 
 	if !conn.cfg.InhibitPingHandling && msg.Command == "PING" {
-		err = conn.WriteMsg(&ircparse.Msg{Command: "PONG", Args: msg.Args})
+		err = conn.WriteMsg(ctx, &ircparse.Msg{Command: "PONG", Args: msg.Args})
 		if err != nil {
 			return
 		}
@@ -238,8 +271,8 @@ func (conn *Conn) rxMsg() (raw string, msg *ircparse.Msg, err error) {
 // ReadMsg in a loop forever until the connection is torn down (e.g. until this
 // method returns an error), as internal ping handling is based on the
 // assumption that this (or ReadMsg) will be called frequently.
-func (conn *Conn) ReadRaw() (string, error) {
-	raw, _, err := conn.rxMsg()
+func (conn *Conn) ReadRaw(ctx context.Context) (string, error) {
+	raw, _, err := conn.rxMsg(ctx, false)
 	return raw, err
 }
 
@@ -249,14 +282,11 @@ func (conn *Conn) ReadRaw() (string, error) {
 // ReadRaw in a loop forever until the connection is torn down (e.g. until this
 // method returns an error), as internal ping handling is based on the
 // assumption that this (or ReadRaw) will be called frequently.
-func (conn *Conn) ReadMsg() (*ircparse.Msg, error) {
-	_, msg, err := conn.rxMsg()
+//
+// The raw message which was parsed is available in msg.Raw.
+func (conn *Conn) ReadMsg(ctx context.Context) (*ircparse.Msg, error) {
+	_, msg, err := conn.rxMsg(ctx, true)
 	return msg, err
-}
-
-// Read a message from the server and return it in both raw and parsed forms.
-func (conn *Conn) ReadMsgBoth() (string, *ircparse.Msg, error) {
-	return conn.rxMsg()
 }
 
 // Teardown the connection. This does not send QUIT but simply closes the
@@ -281,58 +311,39 @@ func (conn *Conn) IsDead() bool {
 	return atomic.LoadUint32(&conn.teardown) != 0
 }
 
-//IRCNick      string // IRC nickname.
-//IRCUser      string // IRC username.
-//IRCReal      string // IRC realname.
-//IRCPass      string // IRC server password. This is not an account password.
-//SASLUsername string // IRCv3 SASL username. Leave blank to disable SASL.
-//SASLPassword string // IRCv3 SASL password.
+// Access the underlying net.Conn. This should only be used for doing interface
+// upgrades and then querying e.g. addresses or TLS information, never for the
+// Read/Write/Close methods.
+func (conn *Conn) Underlying() net.Conn {
+	return conn.conn
+}
 
-// Do not use StartTLS over cleartext connections if it is available.
-// Irrelevant if InheritCapSupport is set, as StartTLS requires cap support.
-//InhibitStartTLS bool
-
-// Do not attempt to use IRCv3 capabilities negotiation with the server.
-// SASLUsername and SASLPassword will be ignored if set.
-//InhibitCapSupport bool
-
-// Set if you want to do your own handshaking. Not recommended/advanced use
-// only. Implies InhibitCapSupport.
-//InhibitHandshake bool
-
-// For ircs:// connections which use TLS from the outset, TLSDialer.Config
-// (or TLSDialContext) is used and determines the TLS configuration used. The
-// below configuration is used for TLS connections established using
-// STARTTLS.
-//StartTLSConfig *tls.Config
-
-// ...
-
-/*
-	if conn.cfg.InhibitHandshake {
-		return nil
+func (conn *Conn) updateReadDeadline(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 
-		if !conn.cfg.InhibitCapSupport {
-			conn.WriteMsg(&ircparse.Msg{
-				Command: "CAP LS",
-				Args:    []string{"302"},
-			})
-		}
+	t, ok := ctx.Deadline()
+	if ok {
+		conn.conn.SetReadDeadline(t)
+	} else {
+		conn.conn.SetReadDeadline(time.Time{})
+	}
 
-		err := conn.WriteMsg(&ircparse.Msg{
-			Command: "USER",
-			Args:    []string{conn.cfg.IRCUser, "*", "*", conn.cfg.IRCReal},
-		})
-		if err != nil {
-			return err
-		}
+	return nil
+}
 
-		err = conn.WriteMsg(&ircparse.Msg{
-			Command: "NICK",
-			Args:    []string{conn.cfg.IRCNick},
-		}) // NICK
-		if err != nil {
-			return err
-		}
-*/
+func (conn *Conn) updateWriteDeadline(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	t, ok := ctx.Deadline()
+	if ok {
+		conn.conn.SetWriteDeadline(t)
+	} else {
+		conn.conn.SetWriteDeadline(time.Time{})
+	}
+
+	return nil
+}

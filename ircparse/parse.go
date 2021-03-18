@@ -26,10 +26,17 @@ type Msg struct {
 	// IRCv3 tags. nil if no tags were specified. Tags without values have empty string values.
 	// @tag1=tagvalue;tag2=tagvalue
 	Tags map[string]string
+
+	// The raw message which was parsed.
+	Raw string
 }
 
 // Marshal a message as an RFC1459 protocol line, including any IRCv3 message tags if specified.
 func (m *Msg) String() (string, error) {
+	if m.Command == "" {
+		return m.Raw, nil
+	}
+
 	s := ""
 	if len(m.Tags) > 0 {
 		s += "@"
@@ -127,6 +134,7 @@ func Parse(s string) (*Msg, error) {
 	}
 
 	msg := &Msg{}
+	msg.Raw = s
 	msg.Command = ms[reIdxCmd]
 
 	rawArgs := ms[reIdxArgs]
