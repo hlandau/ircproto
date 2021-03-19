@@ -225,7 +225,7 @@ func Negotiate(ctx context.Context, conn ircconn.Abstract, cfg *Config) (res *Re
 		// We are waiting for the server to list, or continue listing, its supported caps.
 		case nsWaitCapList:
 			// A valid CAP LS response from the server
-			if msg.Command == "CAP" && len(msg.Args) >= 2 && msg.Args[0] == "*" && msg.Args[1] == "LS" &&
+			if msg.Command == "CAP" && len(msg.Args) >= 2 && msg.Args[1] == "LS" &&
 				(len(msg.Args) == 3 || (len(msg.Args) == 4 && msg.Args[2] == "*")) {
 				caps := strings.Split(strings.Trim(msg.Args[len(msg.Args)-1], " "), " ")
 				for _, capStr := range caps {
@@ -282,7 +282,7 @@ func Negotiate(ctx context.Context, conn ircconn.Abstract, cfg *Config) (res *Re
 
 		// We have CAP REQ'd all the caps we want and are now waiting for the server to ACK or NAK every cap we sent.
 		case nsWaitCapAck:
-			if msg.Command == "CAP" && len(msg.Args) == 3 && msg.Args[0] == "*" && (msg.Args[1] == "ACK" || msg.Args[1] == "NAK") {
+			if msg.Command == "CAP" && len(msg.Args) == 3 && (msg.Args[1] == "ACK" || msg.Args[1] == "NAK") {
 				isAck := msg.Args[1] == "ACK"
 				capStrs := strings.Split(strings.Trim(msg.Args[2], " "), " ")
 				for _, capStr := range capStrs {
