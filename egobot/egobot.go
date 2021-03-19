@@ -17,6 +17,7 @@ import (
 	"gopkg.in/hlandau/service.v2"
 
 	_ "github.com/hlandau/ircproto/egobot/hdlautojoin"
+	_ "github.com/hlandau/ircproto/egobot/hdlctcp"
 	"github.com/hlandau/ircproto/egobot/hdlnick"
 )
 
