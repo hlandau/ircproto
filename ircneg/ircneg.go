@@ -202,9 +202,10 @@ func Negotiate(ctx context.Context, conn ircconn.Abstract, cfg *Config) (res *Re
 			// 001 Welcome, we're done negotiating.
 			// We handle this as an end of negotiation regardless of our state.
 			break
-		} else if msg.Command == "432" || msg.Command == "433" {
-			// 433 Nickname in use
+		} else if msg.Command == "432" || msg.Command == "433" || msg.Command == "437" {
 			// 432 Erroneous nickname
+			// 433 Nickname in use
+			// 437 Nickname is temporarily unavailable
 			// We handle these independently of our negotiation state because we can.
 			// It effectively allows us to parallelise nickname conflict resolution
 			// and have it occur concurrently with e.g. cap negotiation, SASL, etc.

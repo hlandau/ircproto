@@ -2,12 +2,15 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"io"
 
 	"github.com/hlandau/dexlogconfig"
 	"github.com/hlandau/ircproto"
-	"github.com/hlandau/ircproto/egobot/ircnexus"
+	"github.com/hlandau/ircproto/egobot/hdlautojoin"
+	"github.com/hlandau/ircproto/egobot/hdlctcp"
+	"github.com/hlandau/ircproto/egobot/hdlnick"
+	"github.com/hlandau/ircproto/egobot/hdltxbase"
+	"github.com/hlandau/ircproto/egobot/ircregistry"
 	"github.com/hlandau/ircproto/ircconn"
 	"github.com/hlandau/ircproto/ircneg"
 	"github.com/hlandau/ircproto/ircparse"
@@ -15,11 +18,9 @@ import (
 	"github.com/hlandau/xlog"
 	"gopkg.in/hlandau/easyconfig.v1"
 	"gopkg.in/hlandau/service.v2"
-
-	_ "github.com/hlandau/ircproto/egobot/hdlautojoin"
-	_ "github.com/hlandau/ircproto/egobot/hdlctcp"
-	"github.com/hlandau/ircproto/egobot/hdlnick"
-)
+	/*_ "github.com/hlandau/ircproto/egobot/hdlautojoin"
+	_ "github.com/hlandau/ircproto/egobot/hdlhn"
+	*/)
 
 var log, Log = xlog.New("egobot")
 
@@ -31,6 +32,9 @@ type Config struct {
 	IRCSASLUsername   string   `usage:"IRC SASL username" default:""`
 	IRCSASLPassword   string   `usage:"IRC SASL password" default:""`
 	IRCServerPassword string   `usage:"IRC server password" default:""`
+	NickPassword      string   `usage:"services nickname password" default:""`
+	ServicesNick      string   `usage:"nickname used by nickname services" default:"NickServ"`
+	AutojoinChannels  []string `usage:"channels to autojoin" default:""`
 }
 
 type Bot struct {
@@ -73,50 +77,90 @@ func (bot *Bot) Start() error {
 	}
 
 	bot.client = client
-	hdlnick.SetPreferredNick(bot.cfg.IRCNick)
+	isConnected := false
 
-	ircnexus.Init(ircnexus.SinkFunc(func(xmsg *ircnexus.Msg) error {
-		if !xmsg.Outgoing {
-			return fmt.Errorf("not an outgoing message")
-		}
-		if xmsg.InhibitDelivery {
+	registry, err := ircregistry.New()
+	if err != nil {
+		return err
+	}
+
+	// This handler will execute in the below goroutine even though we register
+	// it now.
+	err = registry.InstantiateHandler(hdltxbase.Info(func(env *ircregistry.Envelope) error {
+		if env.InhibitDelivery {
 			return nil
 		}
-		return client.WriteMsg(context.Background(), xmsg.Msg)
-	}))
+
+		return bot.client.WriteMsg(context.Background(), env.Msg)
+	}), nil)
+	if err != nil {
+		return err
+	}
+
+	// Nickname management.
+	err = registry.InstantiateHandler(hdlnick.Info(&hdlnick.Config{
+		PreferredNick: bot.cfg.IRCNick,
+		Password:      bot.cfg.NickPassword,
+		ServicesNick:  bot.cfg.ServicesNick,
+	}), nil)
+	if err != nil {
+		return err
+	}
+
+	// CTCP responses.
+	err = registry.InstantiateHandler(hdlctcp.Info(&hdlctcp.Config{}), nil)
+	if err != nil {
+		return err
+	}
+
+	// Autojoin.
+	err = registry.InstantiateHandler(hdlautojoin.Info(&hdlautojoin.Config{
+		Channels: bot.cfg.AutojoinChannels,
+	}), nil)
+	if err != nil {
+		return err
+	}
 
 	go func() {
 		defer close(bot.stoppedChan)
-		negot := bot.client.NegotiateResult()
+		var negot *ircneg.Result
 
 		for {
 			if newNegot := bot.client.NegotiateResult(); newNegot != negot {
 				// New connection.
 				negot = newNegot
+				isConnected = true
 				if negot != nil {
-					ircnexus.HandleNegotiationComplete(negot)
+					log.Debugf("dispatching negotiation complete")
+					err = ircregistry.InjectNegotiationComplete(registry, negot)
+					log.Errore(err, "negotiation complete handling")
 				}
 			}
 
 			msg, err := bot.client.ReadMsg(context.Background())
 			if err == ircproto.ErrDisconnected {
 				log.Debugf("requested to exit, client shutting down")
+				err2 := ircregistry.InjectDisconnected(registry)
+				log.Errore(err2, "disconnected handling")
 				break
 			} else if err == io.EOF {
 				// Client disconnected and will reconnect, continue running.
 				log.Noticef("client disconnected, reconnecting")
+				isConnected = false
+				err2 := ircregistry.InjectDisconnected(registry)
+				log.Errore(err2, "disconnected handling")
 				continue
 			} else if err != nil {
 				log.Errorf("unexpected error on receive: %v", err)
 				continue
 			}
 
-			xmsg := &ircnexus.Msg{
+			env := &ircregistry.Envelope{
 				Msg:      msg,
-				Outgoing: false,
+				Incoming: true,
 			}
-
-			ircnexus.Handle(xmsg)
+			err = ircregistry.InjectMsgRx(registry, env)
+			log.Errore(err, "RX handling")
 		}
 	}()
 
@@ -141,7 +185,7 @@ func main() {
 	service.Main(&service.Info{
 		Name:          "egobot",
 		Description:   "egobot IRC bot",
-		DefaultChroot: service.EmptyChrootPath,
+		DefaultChroot: ",",
 		NewFunc: func() (service.Runnable, error) {
 			return New(cfg)
 		},
