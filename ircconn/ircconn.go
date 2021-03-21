@@ -277,6 +277,10 @@ func (conn *Conn) WriteMsg(ctx context.Context, msg *ircparse.Msg) error {
 		return err
 	}
 
+	if len(raw) > 512 {
+		raw = raw[0:510] + "\r\n"
+	}
+
 	err = conn.txMsg(ctx, raw)
 	if err == nil && conn.cfg.LogWriteFunc != nil {
 		conn.cfg.LogWriteFunc(msg)
