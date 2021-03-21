@@ -1,5 +1,5 @@
 // Package ircproto provides an auto-reconnecting IRC client library including
-// support IRCv3 capabilities, message tags and SASL.
+// support for IRCv3 capabilities, message tags and SASL.
 package ircproto
 
 import (
