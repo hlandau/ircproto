@@ -1,3 +1,4 @@
+// Package hdlctcp provides CTCP VERSION responder functionality.
 package hdlctcp
 
 import (

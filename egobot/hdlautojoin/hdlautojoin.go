@@ -1,3 +1,5 @@
+// Package hdlautojoin provides a handler implementing channel autojoin
+// functionality.
 package hdlautojoin
 
 import (
@@ -54,6 +56,9 @@ func (h *handler) ListServices() []*ircregistry.ServiceInfo {
 		},
 		&ircregistry.ServiceInfo{
 			Name: "disconnected",
+		},
+		&ircregistry.ServiceInfo{
+			Name: "on-channel",
 		},
 	}
 }
@@ -142,11 +147,14 @@ func (h *handler) IsOnChannel(chanName string) bool {
 	return ok
 }
 
+// Autojoin configuration.
 type Config struct {
 	// Channels to autojoin.
 	Channels []string
 }
 
+// Creates a new HandlerInfo which, when instantiated in ircregistry, uses the
+// given Config to maintain channel joins.
 func Info(cfg *Config) *ircregistry.HandlerInfo {
 	return &ircregistry.HandlerInfo{
 		Name:        "autojoin",
@@ -209,6 +217,11 @@ func (h *handler) monLoop() {
 
 		case <-h.disconnectedChan:
 			s.Connected = false
+			// Must clear these too for the sake of IsOnChannel.
+			for _, ch := range s.Channels {
+				h.monMarkJoined(ch, false)
+				ch.LastTriedToJoin = time.Time{}
+			}
 			tickerChan.Stop()
 
 		case newChanName := <-h.addChan:

@@ -8,6 +8,7 @@ import (
 	"github.com/hlandau/ircproto"
 	"github.com/hlandau/ircproto/egobot/hdlautojoin"
 	"github.com/hlandau/ircproto/egobot/hdlctcp"
+	"github.com/hlandau/ircproto/egobot/hdlhn"
 	"github.com/hlandau/ircproto/egobot/hdlnick"
 	"github.com/hlandau/ircproto/egobot/hdltxbase"
 	"github.com/hlandau/ircproto/egobot/ircregistry"
@@ -18,9 +19,7 @@ import (
 	"github.com/hlandau/xlog"
 	"gopkg.in/hlandau/easyconfig.v1"
 	"gopkg.in/hlandau/service.v2"
-	/*_ "github.com/hlandau/ircproto/egobot/hdlautojoin"
-	_ "github.com/hlandau/ircproto/egobot/hdlhn"
-	*/)
+)
 
 var log, Log = xlog.New("egobot")
 
@@ -35,6 +34,11 @@ type Config struct {
 	NickPassword      string   `usage:"services nickname password" default:""`
 	ServicesNick      string   `usage:"nickname used by nickname services" default:"NickServ"`
 	AutojoinChannels  []string `usage:"channels to autojoin" default:""`
+	HNTopChannel      string   `usage:"HN top channel" default:""`
+	HNLimitItems      int      `usage:"HN item limit" default:"30"`
+	HNNotifyNick      string   `usage:"IRC nick to send notifications to" default:""`
+	HNNotifyUser      string   `usage:"HN username to notify for" default:""`
+	HNNotifyPattern   string   `usage:"regular expression to match HN items on" default:""`
 }
 
 type Bot struct {
@@ -119,6 +123,20 @@ func (bot *Bot) Start() error {
 	}), nil)
 	if err != nil {
 		return err
+	}
+
+	// HN.
+	if bot.cfg.HNTopChannel != "" {
+		err = registry.InstantiateHandler(hdlhn.Info(&hdlhn.Config{
+			TopChannel:    bot.cfg.HNTopChannel,
+			LimitItems:    bot.cfg.HNLimitItems,
+			NotifyPattern: bot.cfg.HNNotifyPattern,
+			NotifyUser:    bot.cfg.HNNotifyUser,
+			NotifyNick:    bot.cfg.HNNotifyNick,
+		}), nil)
+		if err != nil {
+			return err
+		}
 	}
 
 	go func() {
