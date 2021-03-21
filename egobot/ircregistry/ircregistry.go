@@ -162,19 +162,3 @@ type ServiceInfo struct {
 	// of the handler in the list of handlers implementing this service.
 	Priority int
 }
-
-/*
-//
-var HandlerInfo = &ircregistry.HandlerInfo{
-	Name:        "nick",
-	Description: "Nickname management module",
-	NewFunc: func(port ircregistry.Port) (ircregistry.Handler, error) {
-
-	},
-}
-
-func (h *handler) OnMsgRx(msg *xxx.Msg) error {
-	return ircregistry.NextMsgRx(h.port, msg, func() error {
-		ircregistry.MsgTx(h.tx, msg)
-	})
-}*/
