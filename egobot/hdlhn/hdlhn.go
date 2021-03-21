@@ -245,15 +245,37 @@ func (h *handler) load() (int, error) {
 	return v, err
 }
 
+// Module configuration.
 type Config struct {
-	API                        hnapi.Config
-	TopChannel                 string
-	LimitItems                 int
-	NotifyPattern              string
-	NotifyUser                 string
-	NotifyNick                 string
+	API        hnapi.Config // HN API configuration.
+	TopChannel string       // Channel to announce top items in.
+	LimitItems int          // Number of items on top list to announce (default 30).
+
+	// Regular expression to match against items for notification purposes. If
+	// non-empty, any item with matching title, text or URL results in a
+	// notification to the specified nick. Any descendant of any such post will
+	// also result in a notification.
+	NotifyPattern string
+
+	// Notify on any post by a given HN user. Specify the HN username (case
+	// sensitive). If non-empty, any item posted by this user, or any item which
+	// is a descendant of such a post, results in a notification to the specified
+	// nick. This is independent of NotifyPattern.
+	NotifyUser string
+
+	// IRC nickname to send notifications to.
+	NotifyNick string
+
+	// If set to a non-zero value, this is the item number at which processing
+	// would start. Setting this to 1 would process all HN items ever posted (not
+	// recommended). If left as zero, the bot will start from whatever the most
+	// recent item is at the time it is first started. This is only used when the
+	// database is first created and is ignored if the database exists with a
+	// stored most recently processed item number from a previous session.
 	InitialMostRecentProcessed int
-	DBPath                     string
+
+	// Path to database file used to note most recently processed item.
+	DBPath string
 }
 
 func Info(cfg *Config) *ircregistry.HandlerInfo {
