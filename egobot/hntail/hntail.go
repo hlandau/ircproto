@@ -9,10 +9,11 @@ import (
 var log, Log = xlog.New("hntail")
 
 type Config struct {
-	Client       *hnapi.Client
-	OnNewTopItem func(itemNo int) error
-	OnNewItem    func(itemNo int) error
-	LimitItems   int
+	Client                    *hnapi.Client
+	OnNewTopItem              func(itemNo int) error
+	OnNewItem                 func(itemNo int) error
+	LimitItems                int
+	MostRecentProcessedItemNo int
 }
 
 type Tailer struct {
@@ -106,7 +107,7 @@ func (tailer *Tailer) monLoop() {
 }
 
 func (tailer *Tailer) mon2Loop() {
-	var lastItemNo int
+	lastItemNo := tailer.cfg.MostRecentProcessedItemNo
 
 	for {
 		ev := <-tailer.maxChan
@@ -119,6 +120,7 @@ func (tailer *Tailer) mon2Loop() {
 			lastItemNo = maxItemNo
 		}
 
+		time.Sleep(1 * time.Second)
 		for ; lastItemNo < maxItemNo; lastItemNo++ {
 			err = tailer.cfg.OnNewItem(lastItemNo)
 			if err != nil {

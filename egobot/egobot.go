@@ -39,6 +39,7 @@ type Config struct {
 	HNNotifyNick      string   `usage:"IRC nick to send notifications to" default:""`
 	HNNotifyUser      string   `usage:"HN username to notify for" default:""`
 	HNNotifyPattern   string   `usage:"regular expression to match HN items on" default:""`
+	HNDBPath          string   `usage:"HN database path" default:""`
 }
 
 type Bot struct {
@@ -133,6 +134,7 @@ func (bot *Bot) Start() error {
 			NotifyPattern: bot.cfg.HNNotifyPattern,
 			NotifyUser:    bot.cfg.HNNotifyUser,
 			NotifyNick:    bot.cfg.HNNotifyNick,
+			DBPath:        bot.cfg.HNDBPath,
 		}), nil)
 		if err != nil {
 			return err

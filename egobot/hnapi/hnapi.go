@@ -74,6 +74,20 @@ func (c *Client) RelativeURL(relURL string) (string, error) {
 	return u.String(), nil
 }
 
+type FetchError struct {
+	ItemNo     int
+	StatusCode int
+	Status     string
+}
+
+func (e *FetchError) Error() string {
+	return fmt.Sprintf("error while fetching item %v: %v: %v", e.ItemNo, e.StatusCode, e.Status)
+}
+
+func (e *FetchError) Temporary() bool {
+	return e.StatusCode >= 500 && e.StatusCode < 600
+}
+
 func (c *Client) GetItem(itemNo int) (*Item, error) {
 	itemURL, err := c.RelativeURL(fmt.Sprintf("item/%d.json", itemNo))
 	if err != nil {
@@ -87,6 +101,10 @@ func (c *Client) GetItem(itemNo int) (*Item, error) {
 
 	var item Item
 	defer res.Body.Close()
+	if res.StatusCode != 200 {
+		return nil, &FetchError{itemNo, res.StatusCode, res.Status}
+	}
+
 	err = json.NewDecoder(res.Body).Decode(&item)
 	if err != nil {
 		return nil, err

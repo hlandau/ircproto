@@ -275,7 +275,6 @@ func (h *handler) monJoinChannels(s *monState) {
 		return
 	}
 
-	log.Debugf("checking joinable channels")
 	now := time.Now()
 	var names []string
 	for _, chanInfo := range s.Channels {
