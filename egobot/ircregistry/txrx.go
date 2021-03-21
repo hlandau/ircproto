@@ -66,6 +66,12 @@ type GetNickService interface {
 	CurNickName() string
 }
 
+// The "on-channel" service is used by handlers to ask other handlers if they
+// know that the bot is currently joined to a given channel.
+type OnChannelService interface {
+	IsOnChannel(channelName string) bool
+}
+
 // Injects an OnMsgRx event into a registry's registered "rx" service chain.
 func InjectMsgRx(reg *Registry, env *Envelope) error {
 	h := reg.GetFirstHandler("rx")
@@ -286,4 +292,21 @@ func CurNickName(port Port) string {
 	}
 
 	return svc.CurNickName()
+}
+
+// Determines whether the bot is currently joined to a given channel via the
+// "on-channel" service. Returns false if no implementation of the service is
+// found.
+func IsOnChannel(port Port, channelName string) bool {
+	h := port.GetNextHandler("on-channel")
+	if h == nil {
+		return false
+	}
+
+	svc, ok := h.(OnChannelService)
+	if !ok {
+		return false
+	}
+
+	return svc.IsOnChannel(channelName)
 }
