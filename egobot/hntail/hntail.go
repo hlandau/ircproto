@@ -1,3 +1,5 @@
+// Package hntail provides facilities for being alerted when new HN API events
+// occur, and consuming those events like tailing a log.
 package hntail
 
 import (
@@ -8,20 +10,36 @@ import (
 
 var log, Log = xlog.New("hntail")
 
+// Tailer configuration.
 type Config struct {
-	Client                    *hnapi.Client
-	OnNewTopItem              func(itemNo int) error
-	OnNewItem                 func(itemNo int) error
-	LimitItems                int
+	// Required. The tailer must be provided with an instantiated HN API client.
+	Client *hnapi.Client
+
+	// Called synchronously when there is a new item on the toplist.
+	OnNewTopItem func(itemNo int) error
+
+	// Called synchronously when there is any new item globally.
+	OnNewItem func(itemNo int) error
+
+	// Limit the number of items checked on the toplist. By default, the toplist
+	// gives 500 items, not the 30 as on the HN website front page. It is
+	// recommended to set this to a lower value. Default is 30.
+	LimitItems int
+
+	// If set to a non-zero value, the tailer starts tailing the new item list
+	// from here, rather than at whatever the most recent new item is at the time
+	// the tailer is started.
 	MostRecentProcessedItemNo int
 }
 
+// A Hacker News tailer.
 type Tailer struct {
 	cfg     Config
 	topChan <-chan *hnapi.Event
 	maxChan <-chan *hnapi.Event
 }
 
+// Create a new tailer which consumes the Hacker News API.
 func New(cfg *Config) (*Tailer, error) {
 	tailer := &Tailer{
 		cfg: *cfg,
@@ -48,6 +66,7 @@ func New(cfg *Config) (*Tailer, error) {
 	return tailer, nil
 }
 
+// TODO
 func (tailer *Tailer) Destroy() error {
 	return nil
 }

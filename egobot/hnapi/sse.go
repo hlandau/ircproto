@@ -15,6 +15,7 @@ type Event struct {
 	ID   string
 }
 
+// An HTTP Server Sent Events client.
 type SSEListener struct {
 	url         string
 	client      *http.Client
@@ -26,6 +27,10 @@ type SSEListener struct {
 	backoff     unet.Backoff
 }
 
+// Create a new SSE listener which connects to the given URL, using the given
+// HTTP client (or a default client if nil is specified) and sending
+// notifications on notifyChan when events occur. Reconnects automatically if
+// the connection is lost.
 func NewSSEListener(url string, client *http.Client, notifyChan chan<- *Event) (*SSEListener, error) {
 	l := &SSEListener{
 		url:        url,
@@ -47,6 +52,9 @@ func NewSSEListener(url string, client *http.Client, notifyChan chan<- *Event) (
 	return l, nil
 }
 
+// Tears down the listener.
+//
+// Calling this multiple times is inconsequential.
 func (l *SSEListener) Close() error {
 	l.closeOnce.Do(func() {
 		close(l.closeChan)
