@@ -91,7 +91,7 @@ func Info(cfg *Config) *ircregistry.HandlerInfo {
 			}
 
 			if h.cfg.VersionResponse == "" {
-				h.cfg.VersionResponse = "egobot (sam@devever.net)"
+				h.cfg.VersionResponse = "egobot (hlandau@devever.net)"
 			}
 
 			return h, nil

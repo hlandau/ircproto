@@ -110,7 +110,7 @@ func (h *handler) OnMsgRx(env *ircregistry.Envelope) error {
 			}
 
 			log.Debugf("we are being invited to channel %q", env.Msg.Args[1])
-			h.chanEventChan <- chanEvent{ChannelName: env.Msg.Args[1], Type: cetKicked}
+			h.chanEventChan <- chanEvent{ChannelName: env.Msg.Args[1], Type: cetInvited}
 
 		case "473":
 			// 473 Must be invited (+i)
