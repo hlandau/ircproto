@@ -205,7 +205,7 @@ func main() {
 	service.Main(&service.Info{
 		Name:          "egobot",
 		Description:   "egobot IRC bot",
-		DefaultChroot: ",",
+		DefaultChroot: "/",
 		NewFunc: func() (service.Runnable, error) {
 			return New(cfg)
 		},
