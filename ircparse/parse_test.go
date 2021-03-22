@@ -209,6 +209,14 @@ var ss = []item{
 			"baz":               "9 \\31",
 		},
 	}},
+
+	item{":ChanServ!ChanServ@services. MODE ##foo +z \r\n", ":ChanServ!ChanServ@services. MODE ##foo :+z\r\n", true, Msg{
+		NickName: "ChanServ",
+		UserName: "ChanServ",
+		HostName: "services.",
+		Command:  "MODE",
+		Args:     []string{"##foo", "+z"},
+	}},
 }
 
 func TestParse(t *testing.T) {

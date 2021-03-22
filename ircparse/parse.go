@@ -2,7 +2,7 @@
 package ircparse
 
 import (
-	"errors"
+	"fmt"
 	"regexp"
 	"sort"
 	"strings"
@@ -92,8 +92,8 @@ const reUser = `(?P<nick>[^! \r\n]+)!(?P<user>[^@ \r\n]+)@(?P<host>` + reHostOrI
 const reTags = `(?:(?P<tags>@[^ \r\n]+) )?`
 const reFrom = `(?::(?:(?P<server>` + reHostOrIP + `)|` + reUser + `) )?`
 const reCmd = `(?P<cmd>[0-9]{3}|[a-zA-Z][^ \r\n]+)`
-const reArgs = `(?P<args>(?: [^: \r\n][^ \r\n]*)*)`
-const reFinalArgs = `(?: (?P<finalArg>:[^\r\n]*))?`
+const reArgs = `(?P<args>(?: +[^: \r\n][^ \r\n]*)*)`
+const reFinalArgs = `(?: +(?P<finalArg>:[^\r\n]*)?)?`
 
 func mustIdx(re *regexp.Regexp, s string) int {
 	idx := re.SubexpIndex(s)
@@ -123,13 +123,11 @@ var (
 
 var reSplit = regexp.MustCompile(" +")
 
-var ErrMalformed = errors.New("malformed IRC message")
-
 // Parse an IRC protocol line. This should end with "\n".
 func Parse(s string) (*Msg, error) {
 	ms := reParse.FindStringSubmatch(s)
 	if ms == nil {
-		return nil, ErrMalformed
+		return nil, fmt.Errorf("malformed IRC message (1): %q", s)
 	}
 
 	msg := &Msg{}
@@ -163,7 +161,7 @@ func Parse(s string) (*Msg, error) {
 		for _, tag := range tags {
 			tms := reTag.FindStringSubmatch(tag)
 			if tms == nil {
-				return nil, ErrMalformed
+				return nil, fmt.Errorf("malformed IRC message (2): %q", s)
 			}
 
 			tagK := tms[reIdxKey]
