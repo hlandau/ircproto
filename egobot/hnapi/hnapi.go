@@ -27,8 +27,9 @@ type Item struct {
 }
 
 type Config struct {
-	HTTPClient *http.Client // HTTP client to use to make requests, or nil for default.
-	URL        string       // Base URL of the Hacker News API. Must end in "/".
+	HTTPClient    *http.Client // HTTP client to use to make requests, or nil for default.
+	HTTPUserAgent string       // If HTTPClient is nil, HTTP user agent string to use.
+	URL           string       // Base URL of the Hacker News API. Must end in "/".
 }
 
 // A Hacker News API client.
@@ -61,10 +62,24 @@ func New(cfg *Config) (*Client, error) {
 	}
 
 	if c.cfg.HTTPClient == nil {
-		c.cfg.HTTPClient = &http.Client{}
+		c.cfg.HTTPClient = &http.Client{
+			Transport: &dummyTransport{c.cfg.HTTPUserAgent},
+		}
 	}
 
 	return c, nil
+}
+
+// Transport to set User-Agent.
+type dummyTransport struct {
+	UserAgent string
+}
+
+func (d *dummyTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if d.UserAgent != "" {
+		req.Header.Set("User-Agent", d.UserAgent)
+	}
+	return http.DefaultTransport.RoundTrip(req)
 }
 
 // Get a Hacker News API URL by resolving the given relative URL relative to

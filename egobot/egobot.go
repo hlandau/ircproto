@@ -11,6 +11,7 @@ import (
 	"github.com/hlandau/ircproto/egobot/hdlhn"
 	"github.com/hlandau/ircproto/egobot/hdlnick"
 	"github.com/hlandau/ircproto/egobot/hdltxbase"
+	"github.com/hlandau/ircproto/egobot/hnapi"
 	"github.com/hlandau/ircproto/egobot/ircregistry"
 	"github.com/hlandau/ircproto/ircconn"
 	"github.com/hlandau/ircproto/ircneg"
@@ -135,6 +136,9 @@ func (bot *Bot) Start() error {
 			NotifyUser:    bot.cfg.HNNotifyUser,
 			NotifyNick:    bot.cfg.HNNotifyNick,
 			DBPath:        bot.cfg.HNDBPath,
+			API: hnapi.Config{
+				HTTPUserAgent: "egobot (hlandau@devever.net; +https://github.com/hlandau/ircproto; Freenode ##hntop)",
+			},
 		}), nil)
 		if err != nil {
 			return err
