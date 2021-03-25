@@ -22,6 +22,7 @@ var log, Log = xlog.New("ircregistry")
 // A registry keeps a register of registered handlers.
 type Registry struct {
 	handlersByService map[string][]*serviceHandler
+	handlers          []*handlerPort
 }
 
 type serviceHandler struct {
@@ -93,6 +94,7 @@ func (r *Registry) InstantiateHandler(hi *HandlerInfo, args interface{}) error {
 		r.registerService(svc, port)
 	}
 
+	r.handlers = append(r.handlers, port)
 	return nil
 }
 
@@ -109,6 +111,14 @@ func (r *Registry) registerService(svc *ServiceInfo, port *handlerPort) {
 		return list[i].Service.Priority < list[j].Service.Priority
 	})
 	r.handlersByService[svc.Name] = list
+}
+
+// Destroy the registry and all handlers attached to it.
+func (r *Registry) Destroy() {
+	for _, h := range r.handlers {
+		err := h.h.Destroy()
+		log.Errore(err, "destroy handler")
+	}
 }
 
 // All handlers must implement this interface.
