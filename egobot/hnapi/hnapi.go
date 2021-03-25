@@ -4,10 +4,13 @@ package hnapi
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/hlandau/xlog"
 	"net/http"
 	"net/url"
 	"sync"
 )
+
+var log, Log = xlog.New("hnapi")
 
 // A Hacker News item.
 type Item struct {

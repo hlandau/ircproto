@@ -101,7 +101,7 @@ func (tailer *Tailer) monLoop() {
 			if preseedItemCount >= tailer.cfg.LimitItems {
 				err := tailer.cfg.OnNewTopItem(itemNo)
 				if err != nil {
-					log.Errore(err, "failed processing HN new item ID %v", itemNo)
+					log.Errore(err, "failed processing HN new item ID", itemNo)
 					continue
 				}
 			} else {
@@ -143,7 +143,7 @@ func (tailer *Tailer) mon2Loop() {
 		for ; lastItemNo < maxItemNo; lastItemNo++ {
 			err = tailer.cfg.OnNewItem(lastItemNo)
 			if err != nil {
-				log.Errore(err, "failed processing HN max item ID %v", lastItemNo)
+				log.Errore(err, "failed processing HN max item ID", lastItemNo)
 				break
 			}
 		}
