@@ -47,6 +47,7 @@ type Bot struct {
 	cfg         Config
 	client      *ircproto.Client
 	stoppedChan chan struct{}
+	registry    *ircregistry.Registry
 }
 
 func New(cfg *Config) (*Bot, error) {
@@ -82,6 +83,7 @@ func (bot *Bot) Start() error {
 		return err
 	}
 
+	log.Debugf("created protocol connection")
 	bot.client = client
 	isConnected := false
 
@@ -89,6 +91,8 @@ func (bot *Bot) Start() error {
 	if err != nil {
 		return err
 	}
+
+	bot.registry = registry
 
 	// This handler will execute in the below goroutine even though we register
 	// it now.
@@ -188,12 +192,16 @@ func (bot *Bot) Start() error {
 		}
 	}()
 
+	log.Debugf("startup complete")
 	return nil
 }
 
 func (bot *Bot) Stop() error {
-	log.Debugf("stopping")
+	log.Debugf("stopping: tearing down handlers")
+	bot.registry.Destroy()
+	log.Debugf("stopping: tearing down connection")
 	bot.client.Close()
+	log.Debugf("stopping: waiting for main loop...")
 	<-bot.stoppedChan
 	return nil
 }
