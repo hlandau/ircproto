@@ -109,12 +109,14 @@ func (l *SSEListener) open() (*http.Response, error) {
 
 func (l *SSEListener) sessionLoop(res *http.Response) {
 	defer res.Body.Close()
+	log.Debugf("SSE stream open")
 
 	rdr := bufio.NewReader(res.Body)
 	ev := &Event{}
 	for {
 		line, err := rdr.ReadString('\n')
-		if err != nil && err != io.EOF {
+		if err != nil {
+			log.Debugf("SSE stream errored: %v", err)
 			break
 		}
 
