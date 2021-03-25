@@ -44,7 +44,7 @@ func (h *handler) ListServices() []*ircregistry.ServiceInfo {
 
 func (h *handler) onNewTopItem(itemNo int) error {
 	if !ircregistry.IsOnChannel(h.port, h.cfg.TopChannel) {
-		log.Errorf("cannot send new item: not on channel %q", h.cfg.TopChannel)
+		log.Errorf("cannot send new top item: not on channel %q", h.cfg.TopChannel)
 		return fmt.Errorf("not on channel")
 	}
 
@@ -69,6 +69,11 @@ func (h *handler) onNewTopItem(itemNo int) error {
 }
 
 func (h *handler) onNewItem(itemNo int) error {
+	if !ircregistry.IsOnChannel(h.port, h.cfg.TopChannel) {
+		log.Errorf("cannot send new item: not on channel %q", h.cfg.TopChannel)
+		return fmt.Errorf("not on channel")
+	}
+
 	var item *hnapi.Item
 	var err error
 	for i := 0; i < 3; i++ {
