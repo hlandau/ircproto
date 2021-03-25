@@ -271,10 +271,30 @@ func (c *Client) snrAttemptConnect(ctx context.Context) (*ircconn.Conn, *ircneg.
 		return nil, nil, err
 	}
 
+	completedChan := make(chan struct{})
+	go func() {
+		select {
+		case <-time.After(3 * time.Minute):
+			conn.Close()
+		case <-ctx.Done():
+			conn.Close()
+		case <-completedChan:
+		}
+	}()
+
 	res, err := ircneg.Negotiate(ctx, conn, ncfg)
 	if err != nil {
 		conn.Close()
 		return nil, nil, err
+	}
+
+	select {
+	case completedChan <- struct{}{}:
+	default:
+		// If this case is taken the canceller goroutine above has already
+		// cancelled us. This could happen if we are cancelled just after Negotiate
+		// returns success.
+		return nil, nil, fmt.Errorf("late cancellation of attempted connection")
 	}
 
 	// Negotiation was successful so reset the backoff.
