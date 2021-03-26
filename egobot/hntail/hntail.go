@@ -115,7 +115,7 @@ func (tailer *Tailer) monLoop() {
 
 		var delQueue []int
 		for itemNo, r := range records {
-			if now.Sub(r.LastSeen) > 10*time.Minute {
+			if now.Sub(r.LastSeen) > 2*time.Hour {
 				delQueue = append(delQueue, itemNo)
 			}
 		}
