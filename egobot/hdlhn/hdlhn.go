@@ -48,13 +48,13 @@ func (h *handler) onNewTopItem(itemNo int) error {
 		return fmt.Errorf("not on channel")
 	}
 
-	item, err := h.c.GetItem(itemNo)
+	item, err := h.getItem(itemNo)
 	if err != nil {
 		if err2, ok := err.(*hnapi.FetchError); ok && !err2.Temporary() {
 			log.Errore(err, "failed to fetch HN item - non-temporary error, ignoring this item")
 			return nil
 		}
-		log.Errore(err, "failed to fetch HN item - permanent")
+		log.Errore(err, "failed to fetch HN item - temporary error")
 		return err
 	}
 
@@ -74,33 +74,40 @@ func (h *handler) onNewItem(itemNo int) error {
 		return fmt.Errorf("not on channel")
 	}
 
-	var item *hnapi.Item
-	var err error
+	item, err := h.getItem(itemNo)
+	if err != nil {
+		if err2, ok := err.(*hnapi.FetchError); ok && !err2.Temporary() {
+			log.Errore(err, "failed to fetch HN item - non-temporary error, ignoring this item")
+			return nil
+		}
+		log.Errore(err, "failed to fetch HN item - temporary error")
+		return err
+	}
+
+	log.Debugf("%v %+v", itemNo, item)
+	h.auditItem(item)
+	h.setMostRecentProcessed(itemNo)
+
+	return nil
+}
+
+func (h *handler) getItem(itemNo int) (*hnapi.Item, error) {
 	for i := 0; i < 3; i++ {
-		item, err = h.c.GetItem(itemNo)
+		item, err := h.c.GetItem(itemNo)
 		if err != nil {
 			log.Errore(err, "failed to fetch HN item")
-			return err
+			return nil, err
 		}
 
 		if item.ID != 0 {
-			break
+			return item, nil
 		}
 
 		log.Warne(err, "HN item not present when fetched, retrying", itemNo, i)
 		time.Sleep(1 * time.Second)
 	}
 
-	log.Debugf("%v %+v", itemNo, item)
-	if item.ID == 0 {
-		log.Warne(err, "HN item still not present after retries, giving up", itemNo)
-		return nil
-	}
-
-	h.auditItem(item)
-	h.setMostRecentProcessed(itemNo)
-
-	return nil
+	return nil, fmt.Errorf("failed to retrieve HN item after multiple attempts: %v", itemNo)
 }
 
 func (h *handler) auditItem(item *hnapi.Item) {
