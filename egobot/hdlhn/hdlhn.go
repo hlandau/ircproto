@@ -80,8 +80,8 @@ func (h *handler) onNewItem(itemNo int) error {
 			log.Errore(err, "failed to fetch HN item - non-temporary error, ignoring this item")
 			return nil
 		}
-		log.Errore(err, "failed to fetch HN item - temporary error")
-		return err
+		log.Errore(err, "failed to fetch HN item - prolonged possibly temporary error - ignoring this item anyway")
+		return nil
 	}
 
 	log.Debugf("%v %+v", itemNo, item)
@@ -92,7 +92,7 @@ func (h *handler) onNewItem(itemNo int) error {
 }
 
 func (h *handler) getItem(itemNo int) (*hnapi.Item, error) {
-	for i := 0; i < 3; i++ {
+	for i := 0; i < 5; i++ {
 		item, err := h.c.GetItem(itemNo)
 		if err != nil {
 			log.Errore(err, "failed to fetch HN item")
